@@ -161,6 +161,14 @@ worker は端末に繋がっていないので、権限の確認ダイアログ�
 そのため `workerPermissionMode`（既定は `acceptEdits`）で事前に方針を決め、
 判断が要ることは worker が**文章でスレッドに聞く**運用にしている。
 
+指定できるのは `claude --permission-mode` が受け付ける値。編集だけ自動で通す
+`acceptEdits`、全部自動で通す `bypassPermissions` などがある。`default` は
+設定ファイル側の言い方で、この項目に書くと worker が起動しないので注意。
+
+方針は**新規に立てるときも、止まった会話を再開するときも**渡される。設定を変えたら、
+すでに動いている worker には効かないので、止めて立て直す（`stop_worker` のあと
+スレッドに何か書く、あるいは `/gw-control:stop --workers`）。
+
 危険な操作を機械的に塞ぎたい場合は `permissions.deny` を書く。ただし置き場所に注意。
 リポジトリの `.claude/settings.json` は、**worker がそのリポジトリを cwd として開いた
 ときにしか読まれない**。親ディレクトリで開いた worker には効かない。

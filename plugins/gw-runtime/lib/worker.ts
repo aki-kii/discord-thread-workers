@@ -130,8 +130,19 @@ async function spawnWorker(
 }
 
 async function resumeWorker(threadId: string, sessionId: string): Promise<void> {
+  // 再開でも権限の方針を渡し直す。付け忘れると、止まって戻ってきた worker だけが
+  // 既定の権限で動き、端末のいないところで確認ダイアログに当たって止まる。
   const p = Bun.spawn(
-    ["claude", "--bg", "--resume", sessionId, "--name", workerName(threadId)],
+    [
+      "claude",
+      "--bg",
+      "--resume",
+      sessionId,
+      "--name",
+      workerName(threadId),
+      "--permission-mode",
+      config().workerPermissionMode,
+    ],
     { stdout: "pipe", stderr: "pipe" },
   );
   await p.exited;
