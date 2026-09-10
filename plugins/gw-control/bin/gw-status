@@ -6,12 +6,12 @@ set -eu
 
 load_config
 
-claude agents --json 2>/dev/null | python3 - "$CFG_GW_NAME" <<'PY'
-import json, sys, time
+AGENTS_JSON="$(agents_json)" python3 - "$CFG_GW_NAME" <<'PY'
+import json, os, sys, time
 
 gw_name = sys.argv[1]
 try:
-    rows = json.load(sys.stdin)
+    rows = json.loads(os.environ.get("AGENTS_JSON") or "[]")
 except Exception:
     rows = []
 

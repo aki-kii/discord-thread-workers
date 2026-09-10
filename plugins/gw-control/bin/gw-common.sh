@@ -120,14 +120,21 @@ PY
   CFG_SETTINGS="$CFG_RUNTIME/config/gw-settings.json"
 }
 
-# claude agents --json を読み、名前が一致する行を "state\tid\tsessionId\tcwd" で返す。
+# 一覧の取得。ヒアドキュメントでスクリプトを渡すと標準入力がそちらに奪われるので、
+# データはパイプではなく環境変数で渡す。
+agents_json() {
+  claude agents --json 2>/dev/null || printf '[]'
+}
+
+# 名前が一致する行を "state\tid\tsessionId\tcwd" で返す。
 # state は running / stopped。見つからなければ何も出力しない。
 agent_by_name() {
-  claude agents --json 2>/dev/null | python3 - "$1" <<'PY'
-import json, sys
+  AGENTS_JSON="$(agents_json)" python3 - "$1" <<'PY'
+import json, os, sys
+
 want = sys.argv[1]
 try:
-    rows = json.load(sys.stdin)
+    rows = json.loads(os.environ.get("AGENTS_JSON") or "[]")
 except Exception:
     sys.exit(0)
 for a in rows if isinstance(rows, list) else []:
@@ -141,10 +148,11 @@ PY
 
 # 起動ログから channels の登録状況を判定する。ok / not-allowed / missing を返す。
 channel_state() {
-  claude logs "$1" 2>/dev/null | python3 <<'PY'
-import re, sys
-raw = sys.stdin.buffer.read().decode("utf-8", "replace")
-txt = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a", "", raw)
+  GW_LOGS="$(claude logs "$1" 2>/dev/null | tr -d '\000' || true)" python3 <<'PY'
+import os, re
+
+txt = os.environ.get("GW_LOGS") or ""
+txt = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a", "", txt)
 txt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", txt)
 if "not on the approved channels allowlist" in txt:
     print("not-allowed")
