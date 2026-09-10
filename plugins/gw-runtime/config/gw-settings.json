@@ -9,6 +9,7 @@
       "mcp__plugin_gw-runtime_gw-runtime__list_workers",
       "mcp__plugin_gw-runtime_gw-runtime__stop_worker",
       "mcp__plugin_gw-runtime_gw-runtime__restart_worker",
+      "mcp__plugin_gw-runtime_gw-runtime__reap_workers",
       "mcp__plugin_discord_discord__reply",
       "mcp__plugin_discord_discord__react",
       "mcp__plugin_discord_discord__fetch_messages",

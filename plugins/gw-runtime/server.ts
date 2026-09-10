@@ -14,6 +14,7 @@ import {
   workerName,
 } from "./lib/agents.ts";
 import { ensureWorker } from "./lib/worker.ts";
+import { reapWorkers } from "./lib/reap.ts";
 import { cacheDrop } from "./lib/config.ts";
 
 const server = new McpServer(
@@ -27,6 +28,8 @@ const server = new McpServer(
       "SendMessage で本文をそのまま渡してください。対応表はどこにもありません。",
       "スレッドではないチャンネルの発言には state: not_a_thread が返ります。",
       "そのときは何も中継せず、Discord にも返信しないでください。",
+      "中継し終えたあとに reap_workers を呼ぶと、閉じたスレッドの worker が片付きます。",
+      "呼びすぎても間隔を見て自分で見送るので、毎回呼んで構いません。",
     ].join("\n"),
   },
 );
@@ -104,6 +107,26 @@ server.registerTool(
     if (!isRunning(a)) return text(JSON.stringify({ state: "already_stopped", name }));
     await stopAgent(a.id);
     return text(JSON.stringify({ state: "stopped", name, id: a.id }));
+  },
+);
+
+server.registerTool(
+  "reap_workers",
+  {
+    description:
+      "閉じた（アーカイブされた・消された）スレッドの worker を止めて回る掃除。" +
+      "中継のついでに毎回呼んでよい。前回から間隔が空いていなければ何もせず skipped を返す。" +
+      "止めても会話は残るので、スレッドが開き直されて発言が届けば同じ会話で再開する。",
+    inputSchema: {
+      force: z
+        .boolean()
+        .optional()
+        .describe("間隔を無視して今すぐ掃除する。手で確かめたいときだけ使う"),
+    },
+  },
+  async ({ force }) => {
+    const r = await reapWorkers(force ?? false);
+    return text(JSON.stringify(r, null, 2));
   },
 );
 

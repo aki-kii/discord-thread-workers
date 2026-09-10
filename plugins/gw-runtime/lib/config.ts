@@ -11,6 +11,7 @@ export type Config = {
   workerPermissionMode: string;
   historyLimit: number;
   pinToRepo: boolean;
+  reapIntervalMinutes: number;
 };
 
 export const DTW_HOME =
@@ -42,6 +43,7 @@ export function config(): Config {
     workerPermissionMode: String(raw.workerPermissionMode ?? "acceptEdits"),
     historyLimit: Number(raw.historyLimit ?? 50),
     pinToRepo: raw.pinToRepo !== false,
+    reapIntervalMinutes: Number(raw.reapIntervalMinutes ?? 60),
   };
   return cached;
 }

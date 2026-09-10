@@ -1,5 +1,6 @@
 // Discord REST を直接叩く。Gateway 接続は持たない。
-// 使うのは 2 つだけ: チャンネルを引く（スレッドかどうかの判定と cwd の決定に使う）と、
+// 使うのは 3 つだけ: チャンネルを引く（スレッドかどうかの判定と cwd の決定に使う）、
+// スレッドが閉じているかを見る（閉じた worker の片付けに使う）、
 // 履歴を引く（新規 worker の文脈復元に使う）。
 
 import { readFileSync } from "node:fs";
@@ -48,6 +49,33 @@ export async function channelInfo(channelId: string): Promise<ChannelInfo> {
     name: String(ch.name ?? ""),
     isThread: THREAD_TYPES.has(Number(ch.type)),
   };
+}
+
+// スレッドが閉じているか。
+//
+// Discord の「クローズ」はアーカイブのこと。チャンネルを引くと
+// thread_metadata.archived に出る。消されたスレッドは 404 になるので、
+// 引けなかったこと自体を gone として返す。
+//
+// unknown は「判断がつかない」。ネットワークや権限の失敗をアーカイブと
+// 取り違えて worker を止めてしまわないよう、明示的に分けている。
+export type ThreadState = "open" | "archived" | "gone" | "unknown";
+
+export async function threadState(channelId: string): Promise<ThreadState> {
+  const res = await fetch(`${API}/channels/${channelId}`, {
+    headers: { authorization: `Bot ${botToken()}` },
+  });
+
+  if (res.status === 404) return "gone";
+  if (!res.ok) return "unknown";
+
+  try {
+    const ch: any = await res.json();
+    if (!ch?.thread_metadata) return "open"; // スレッドでないなら閉じようがない
+    return ch.thread_metadata.archived ? "archived" : "open";
+  } catch {
+    return "unknown";
+  }
 }
 
 export type HistoryLine = { author: string; bot: boolean; text: string };
