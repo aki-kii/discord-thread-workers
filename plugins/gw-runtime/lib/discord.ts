@@ -40,6 +40,33 @@ export async function channelName(channelId: string): Promise<string> {
   return String(ch.name ?? "");
 }
 
+// スレッドが閉じているか。
+//
+// Discord の「クローズ」はアーカイブのこと。チャンネルを引くと
+// thread_metadata.archived に出る。消されたスレッドは 404 になるので、
+// 引けなかったこと自体を gone として返す。
+//
+// unknown は「判断がつかない」。ネットワークや権限の失敗をアーカイブと
+// 取り違えて worker を止めてしまわないよう、明示的に分けている。
+export type ThreadState = "open" | "archived" | "gone" | "unknown";
+
+export async function threadState(channelId: string): Promise<ThreadState> {
+  const res = await fetch(`${API}/channels/${channelId}`, {
+    headers: { authorization: `Bot ${botToken()}` },
+  });
+
+  if (res.status === 404) return "gone";
+  if (!res.ok) return "unknown";
+
+  try {
+    const ch: any = await res.json();
+    if (!ch?.thread_metadata) return "open"; // スレッドでないなら閉じようがない
+    return ch.thread_metadata.archived ? "archived" : "open";
+  } catch {
+    return "unknown";
+  }
+}
+
 export type HistoryLine = { author: string; bot: boolean; text: string };
 
 // 古い順に返す。呼び出し側が引き金になった 1 件を落とす。
