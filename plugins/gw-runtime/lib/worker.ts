@@ -8,7 +8,7 @@ import {
   cacheWrite,
   config,
 } from "./config.ts";
-import { channelName, history } from "./discord.ts";
+import { channelInfo, history } from "./discord.ts";
 import {
   findByName,
   findBySessionId,
@@ -22,6 +22,7 @@ export type EnsureState =
   | "running"
   | "resumed"
   | "created"
+  | "not_a_thread"
   | "no_repo"
   | "error";
 
@@ -161,10 +162,35 @@ async function afterStart(
   return { state, name, id: live.id, cwd: live.cwd ?? cwd };
 }
 
+// スレッドかどうかは ID について変わらないので、一度引いたら覚えておく。
+const threadKind = new Map<string, boolean>();
+
+async function isThread(channelId: string): Promise<boolean> {
+  const known = threadKind.get(channelId);
+  if (known !== undefined) return known;
+
+  const info = await channelInfo(channelId);
+  threadKind.set(channelId, info.isThread);
+  return info.isThread;
+}
+
 export async function ensureWorker(threadId: string): Promise<EnsureResult> {
   const name = workerName(threadId);
 
   try {
+    // 0. スレッドでなければ相手にしない。
+    //
+    // 公式 Discord プラグインの受信判定は親チャンネル単位なので、親を許可すると
+    // チャンネル直下の発言もここまで届く。そこに worker を立てると、スレッドと
+    // 関係のない雑談すべてに bot が返事をしてしまう。担当単位はスレッドだけ。
+    if (!(await isThread(threadId))) {
+      return {
+        state: "not_a_thread",
+        name,
+        message: "スレッドではありません。チャンネル直下の発言には worker を立てません。",
+      };
+    }
+
     // 1. 生きている
     const live: Agent | null = await findByName(name);
     if (live && isRunning(live)) {
@@ -182,7 +208,7 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
     }
 
     // 3. 新規に立てる。作業ディレクトリを決め、履歴で文脈だけ復元する
-    const cwd = resolveCwd(await channelName(threadId));
+    const cwd = resolveCwd((await channelInfo(threadId)).name);
     if (!cwd) {
       return {
         state: "no_repo",

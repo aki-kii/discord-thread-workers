@@ -25,6 +25,8 @@ const server = new McpServer(
       "スレッド ID が鍵で、worker のセッション名は thread-<スレッドID> になります。",
       "スレッドからメッセージが届いたら ensure_worker を呼び、返ってきた name 宛に",
       "SendMessage で本文をそのまま渡してください。対応表はどこにもありません。",
+      "スレッドではないチャンネルの発言には state: not_a_thread が返ります。",
+      "そのときは何も中継せず、Discord にも返信しないでください。",
     ].join("\n"),
   },
 );
@@ -37,7 +39,8 @@ server.registerTool(
     description:
       "スレッド ID に対応する worker セッションを用意し、宛先の名前を返す。" +
       "動いていればそのまま、止まっていれば同じ会話で再開、無ければスレッド名から" +
-      "リポジトリを決めて新規に立て、そのスレッドの履歴を文脈として読ませる。",
+      "リポジトリを決めて新規に立て、そのスレッドの履歴を文脈として読ませる。" +
+      "スレッドではないチャンネルの ID を渡した場合は worker を立てず not_a_thread を返す。",
     inputSchema: {
       thread_id: z
         .string()

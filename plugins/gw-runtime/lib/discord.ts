@@ -1,5 +1,6 @@
 // Discord REST を直接叩く。Gateway 接続は持たない。
-// 使うのは 2 つだけ: スレッド名を引く（cwd の決定に使う）と、履歴を引く（新規 worker の文脈復元に使う）。
+// 使うのは 2 つだけ: チャンネルを引く（スレッドかどうかの判定と cwd の決定に使う）と、
+// 履歴を引く（新規 worker の文脈復元に使う）。
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,9 +36,18 @@ async function api(path: string): Promise<any> {
   return res.json();
 }
 
-export async function channelName(channelId: string): Promise<string> {
+// スレッドのチャンネル種別。10 = アナウンス、11 = 公開、12 = 非公開。
+// これ以外は通常のチャンネルで、worker の担当単位にはならない。
+const THREAD_TYPES = new Set([10, 11, 12]);
+
+export type ChannelInfo = { name: string; isThread: boolean };
+
+export async function channelInfo(channelId: string): Promise<ChannelInfo> {
   const ch = await api(`/channels/${channelId}`);
-  return String(ch.name ?? "");
+  return {
+    name: String(ch.name ?? ""),
+    isThread: THREAD_TYPES.has(Number(ch.type)),
+  };
 }
 
 export type HistoryLine = { author: string; bot: boolean; text: string };
