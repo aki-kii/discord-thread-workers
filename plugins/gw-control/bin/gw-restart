@@ -1,0 +1,9 @@
+#!/bin/sh
+# GW を止めて立て直す。worker には触らない。worker は生き続ける。
+
+set -eu
+here=$(dirname "$0")
+
+"$here/gw-stop"
+sleep 1
+exec "$here/gw-start"

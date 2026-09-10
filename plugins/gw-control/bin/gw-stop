@@ -1,0 +1,35 @@
+#!/bin/sh
+# GW を止める。--workers を付けると worker も全部止める。会話は残る。
+
+set -eu
+. "$(dirname "$0")/gw-common.sh"
+
+load_config
+
+found=$(agent_by_name "$CFG_GW_NAME" || true)
+if [ -z "$found" ]; then
+  printf 'GW はいません。\n'
+elif [ "$(printf '%s' "$found" | cut -f1)" = stopped ]; then
+  printf 'GW はすでに停止しています (%s)。\n' "$(printf '%s' "$found" | cut -f2)"
+else
+  id=$(printf '%s' "$found" | cut -f2)
+  claude stop "$id" >/dev/null 2>&1 || true
+  printf 'GW を止めました (%s)。会話は残っています。\n' "$id"
+fi
+
+[ "${1:-}" = "--workers" ] || exit 0
+
+claude agents --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+for a in rows if isinstance(rows, list) else []:
+    if (a.get("name") or "").startswith("thread-") and a.get("pid"):
+        print(a.get("id"))
+' | while read -r wid; do
+  [ -n "$wid" ] || continue
+  claude stop "$wid" >/dev/null 2>&1 || true
+  printf 'worker を止めました (%s)。\n' "$wid"
+done

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "gw-runtime",
+  "version": "0.1.0",
+  "description": "GW セッション専用。スレッド ID を鍵に worker セッションを確保するツールと、中継が一言一句そのままであることを検査するフック",
+  "author": { "name": "aki-kii" },
+  "repository": "https://github.com/aki-kii/discord-thread-workers",
+  "keywords": ["discord", "channel", "relay", "worker"],
+  "license": "MIT"
+}

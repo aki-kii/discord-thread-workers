@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "discord-thread-workers",
+  "description": "Discord のスレッドごとに Claude Code セッションを割り当てる中継",
+  "owner": { "name": "aki-kii" },
+  "plugins": [
+    {
+      "name": "gw-control",
+      "description": "中継セッション（GW）の起動・状態確認・停止・再起動。インストールして有効化し、普段のセッションから呼ぶ。判断はすべて同梱スクリプトの中にあり、スキルは呼ぶだけ。",
+      "source": "./plugins/gw-control",
+      "category": "productivity",
+      "homepage": "https://github.com/aki-kii/discord-thread-workers"
+    },
+    {
+      "name": "gw-runtime",
+      "description": "GW セッション専用の中身。worker のライフサイクル管理ツールと、中継が一言一句そのままであることを検査するフック。インストールするが有効化はしない。gw-control が起動時に GW セッションにだけ読み込む。",
+      "source": "./plugins/gw-runtime",
+      "category": "productivity",
+      "homepage": "https://github.com/aki-kii/discord-thread-workers"
+    }
+  ]
+}

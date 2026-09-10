@@ -1,0 +1,153 @@
+# discord-thread-workers
+
+Discord のスレッド 1 本に、Claude Code のセッション 1 つを割り当てる。
+スレッドで話しかけると、そのリポジトリで動く worker が立ち上がって返事をする。
+
+Claude Code Channels 本体と公式 Discord プラグインには手を入れない。
+足りない部分だけを外から足している。
+
+```
+Discord のスレッド ──▶ 公式 Discord プラグイン ──▶ GW ──▶ worker（実リポジトリ）
+        ▲                                            │
+        └──────────── reply ◀────── SendMessage ◀────┘
+```
+
+GW（Gateway セッション）は中継だけをする。届いた本文を一言一句そのまま worker に渡し、
+返ってきた本文を一言一句そのままスレッドへ返す。要約も加筆も分割もしない。
+これはルールとしてだけでなく、フックで機械的に強制している。
+
+## 仕組みの要点
+
+| | |
+| --- | --- |
+| スレッドと worker の対応 | セッション名を `thread-<スレッドID>` に固定する。対応表は持たない |
+| worker の台帳 | `claude agents --json` が唯一の真実。停止・稼働・作業ディレクトリが取れる |
+| 復路の宛先 | 届いたメッセージの `from-name` にスレッド ID が入っている。GW は何も覚えない |
+| worker の置き場所 | `claude --bg`。tmux は使わない |
+| GW の置き場所 | 同じく `claude --bg`。ターミナルを占有しない |
+| GW の権限 | ファイル読み書きもコマンド実行も禁止。中継に必要なツールだけ許可 |
+
+## 必要なもの
+
+- Claude Code（Channels はリサーチプレビュー。Pro / Max なら追加設定は不要）
+- [Bun](https://bun.sh) — channel プラグインと本プラグインの MCP サーバーが使う
+- 公式 Discord プラグインの設定が済んでいること（`/discord:configure <トークン>`）
+
+## 導入
+
+### 1. プラグインを入れる
+
+```
+/plugin marketplace add aki-kii/discord-thread-workers
+/plugin install gw-control@discord-thread-workers
+/plugin install gw-runtime@discord-thread-workers
+```
+
+**`gw-runtime` は有効化しない。** インストールしてファイルを置くだけでよく、
+`gw-control` が GW を起動するときに `--plugin-dir` でそのセッションにだけ読み込む。
+有効化してしまうと、普段のセッションにも MCP サーバーとフックが載る。
+
+### 2. Discord 側を用意する
+
+worker 用のスレッドをぶら下げる親チャンネルを 1 つ作り、受信を許可する。
+
+```
+/discord:access group add <親チャンネルID> --no-mention
+```
+
+公式プラグインの受信判定はスレッドではなく**親チャンネル**で行われるので、
+親を 1 つ許可すれば配下のスレッドはすべて通る。`--no-mention` を付けないと、
+スレッドで話すたびにボットをメンションしないと届かない。
+
+### 3. 設定を書く
+
+初回に `gw-control` のスキルを呼ぶと `~/.claude/discord-thread-workers/config.json` の
+雛形ができる。`workerRoots` だけ確認すればよい。
+
+```json
+{
+  "workerRoots": ["/Users/you/dev/src/github.com"],
+  "gwName": "gw",
+  "gwCwd": "/Users/you/.claude/discord-thread-workers/run",
+  "channelPlugin": "plugin:discord@claude-plugins-official",
+  "discordStateDir": "/Users/you/.claude/channels/discord",
+  "workerPermissionMode": "acceptEdits",
+  "historyLimit": 50
+}
+```
+
+`workerRoots` の直下と 1 階層下から、スレッド名の先頭のリポジトリ名を探す。
+リポジトリを clone して開発する場合は `"runtimePath"` を足し、
+そのチェックアウトの `plugins/gw-runtime` を指す。
+
+### 4. GW を立てる
+
+普段のセッションで `/gw-control:start`。あるいは端末から直接:
+
+```sh
+~/.claude/plugins/cache/discord-thread-workers/gw-control/*/bin/gw-start
+```
+
+何度実行しても安全で、すでに動いていれば何もしない。
+
+## 使い方
+
+親チャンネルにスレッドを切り、**名前の先頭にリポジトリ名を入れて**話しかける。
+
+```
+slides  トレース章の図を差し替えたい
+```
+
+最初の発言で worker が起動し、以降そのスレッドはその仕事専任の会話になる。
+別の仕事は別のスレッドを切る。
+
+| したいこと | |
+| --- | --- |
+| 状態を見る | `/gw-control:status` |
+| GW を止める | `/gw-control:stop`（worker も止めるなら `--workers`） |
+| GW を入れ直す | `/gw-control:restart` |
+| worker の中を見る | `claude attach <id>` |
+| 全部を今のバージョンで立て直す | `claude respawn --all` |
+
+GW を止めても worker は生き続ける。GW を立て直せばそのまま繋がる。
+
+## worker が落ちたら
+
+復帰は二段構え。
+
+1. 会話が残っていれば**同じ会話のまま再開**する。作業の状態まで戻る
+2. 会話ごと消えている場合は新規に立て、**スレッドの履歴を読ませて**文脈だけ復元する
+
+どちらも自動で選ばれる。手で何かする必要はない。
+
+## 権限について
+
+worker は端末に繋がっていないので、権限の確認ダイアログに答えられる人がいない。
+そのため `workerPermissionMode`（既定は `acceptEdits`）で事前に方針を決め、
+判断が要ることは worker が**文章でスレッドに聞く**運用にしている。
+
+危険な操作を機械的に塞ぎたい場合は、対象リポジトリ側の `.claude/settings.json` に
+`permissions.deny` を書く。worker は普通のセッションなので、そのまま効く。
+
+## 構成
+
+```
+plugins/gw-control/     有効化して使う。スキルと、判断を全部持つスクリプト
+plugins/gw-runtime/     GW にだけ読み込む。MCP サーバー、フック、GW と worker のルール
+```
+
+`gw-control/bin/*` はスキルからも端末からも launchd からも同じものが動く。
+点検・起動・確認はすべてスクリプトの中にあり、スキルは「実行して出力を見せる」だけ。
+
+## 既知の制約
+
+- GW が止まっている間に届いたメッセージは失われる。復帰時に拾い直す仕組みは未実装
+- スレッドの自動アーカイブは作成時に最長（7 日）を選んでおくとよい
+- 同じリポジトリに複数のスレッドを切ると、worker 同士が同じ作業ディレクトリで衝突する。
+  スレッドごとに worktree を切る対応は未実装
+- 逐語検査は会話ログを読んで突き合わせている。ログを読めなかった場合は中継を止めず、
+  検査を飛ばしたことだけを伝える
+
+## ライセンス
+
+MIT

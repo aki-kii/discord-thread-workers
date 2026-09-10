@@ -1,0 +1,156 @@
+#!/bin/sh
+# 共有ヘルパー。gw-start / gw-status / gw-stop / gw-restart から読み込む。
+# 判断はすべてここと各スクリプトの中で完結させる。呼び出し側に条件分岐を持たせない。
+
+set -eu
+
+DTW_HOME="${DTW_HOME:-$HOME/.claude/discord-thread-workers}"
+DTW_CONFIG="${DTW_CONFIG:-$DTW_HOME/config.json}"
+
+die() {
+  printf 'エラー: %s\n' "$1" >&2
+  exit 1
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "$1 が見つかりません。$2"
+}
+
+# 設定が無ければ雛形を書いて終わる。中身を確認してもらってから出直す。
+ensure_config() {
+  [ -f "$DTW_CONFIG" ] && return 0
+
+  mkdir -p "$DTW_HOME"
+  cat > "$DTW_CONFIG" <<EOF
+{
+  "workerRoots": ["$HOME/dev/src/github.com"],
+  "gwName": "gw",
+  "gwCwd": "$DTW_HOME/run",
+  "channelPlugin": "plugin:discord@claude-plugins-official",
+  "discordStateDir": "$HOME/.claude/channels/discord",
+  "workerPermissionMode": "acceptEdits",
+  "historyLimit": 50
+}
+EOF
+  cat >&2 <<EOF
+設定ファイルを作りました: $DTW_CONFIG
+
+workerRoots を確認してください。スレッド名の先頭のリポジトリ名を、
+ここに挙げたディレクトリの直下と 1 階層下から探します。
+
+リポジトリを clone して開発する場合は "runtimePath" を足して、
+そのチェックアウトの plugins/gw-runtime を指してください。
+無ければインストール済みの gw-runtime を自動で使います。
+
+確認したらもう一度実行してください。
+EOF
+  exit 1
+}
+
+# インストール済みの gw-runtime の場所を探す。
+# 有効化されている必要はない。ファイルさえあれば --plugin-dir で渡せる。
+resolve_runtime() {
+  python3 - "$DTW_CONFIG" <<'PY'
+import json, os, sys
+
+cfg = {}
+try:
+    with open(sys.argv[1]) as f:
+        cfg = json.load(f)
+except Exception:
+    pass
+
+# 開発用の明示指定が最優先
+override = cfg.get("runtimePath")
+if override:
+    print(os.path.abspath(os.path.expanduser(override)))
+    raise SystemExit
+
+reg = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+try:
+    with open(reg) as f:
+        plugins = json.load(f).get("plugins", {})
+except Exception:
+    plugins = {}
+
+best = None
+for key, installs in plugins.items():
+    if not key.startswith("gw-runtime@"):
+        continue
+    for i in installs:
+        p = i.get("installPath")
+        if p and os.path.isdir(p):
+            # 同名が複数あれば新しい方を採る
+            if best is None or (i.get("lastUpdated") or "") > best[0]:
+                best = (i.get("lastUpdated") or "", p)
+print(best[1] if best else "")
+PY
+}
+
+# 設定を読んでシェル変数に展開する。
+load_config() {
+  ensure_config
+  eval "$(
+    python3 - "$DTW_CONFIG" <<'PY'
+import json, os, shlex, sys
+
+with open(sys.argv[1]) as f:
+    c = json.load(f)
+
+def path(v):
+    return os.path.abspath(os.path.expanduser(str(v)))
+
+out = {
+    "CFG_GW_NAME": str(c.get("gwName", "gw")),
+    "CFG_GW_CWD": path(c.get("gwCwd", "~/.claude/discord-thread-workers/run")),
+    "CFG_CHANNEL": str(c.get("channelPlugin", "plugin:discord@claude-plugins-official")),
+    "CFG_STATE_DIR": path(c.get("discordStateDir", "~/.claude/channels/discord")),
+}
+for k, v in out.items():
+    print(f"{k}={shlex.quote(v)}")
+PY
+  )"
+
+  CFG_RUNTIME=$(resolve_runtime)
+  [ -n "$CFG_RUNTIME" ] || die "gw-runtime が見つかりません。
+  /plugin install gw-runtime@discord-thread-workers を実行してください（有効化は不要です）。
+  リポジトリから動かす場合は $DTW_CONFIG に \"runtimePath\" を書いてください。"
+
+  CFG_RULES="$CFG_RUNTIME/prompts/relay-rules.md"
+  CFG_SETTINGS="$CFG_RUNTIME/config/gw-settings.json"
+}
+
+# claude agents --json を読み、名前が一致する行を "state\tid\tsessionId\tcwd" で返す。
+# state は running / stopped。見つからなければ何も出力しない。
+agent_by_name() {
+  claude agents --json 2>/dev/null | python3 - "$1" <<'PY'
+import json, sys
+want = sys.argv[1]
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for a in rows if isinstance(rows, list) else []:
+    if a.get("name") != want:
+        continue
+    state = "running" if a.get("pid") else "stopped"
+    print("\t".join([state, str(a.get("id") or ""), str(a.get("sessionId") or ""), str(a.get("cwd") or "")]))
+    break
+PY
+}
+
+# 起動ログから channels の登録状況を判定する。ok / not-allowed / missing を返す。
+channel_state() {
+  claude logs "$1" 2>/dev/null | python3 <<'PY'
+import re, sys
+raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+txt = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a", "", raw)
+txt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", txt)
+if "not on the approved channels allowlist" in txt:
+    print("not-allowed")
+elif "inject directly in this session" in txt:
+    print("ok")
+else:
+    print("missing")
+PY
+}

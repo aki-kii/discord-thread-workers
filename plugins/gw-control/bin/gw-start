@@ -1,0 +1,105 @@
+#!/bin/sh
+# GW セッションを起動する。何度実行しても安全。
+# すでに動いていれば何もせず終わる。GW が 2 つになると Discord に二重返信するため。
+
+set -eu
+. "$(dirname "$0")/gw-common.sh"
+
+load_config
+
+# ---- 1. 点検 -------------------------------------------------------------
+
+need_cmd claude "Claude Code をインストールしてください。"
+need_cmd bun "https://bun.sh からインストールしてください。channel プラグインと MCP サーバーが必要とします。"
+need_cmd python3 "macOS なら標準で入っています。"
+
+[ -d "$CFG_RUNTIME" ] || die "実行時プラグインが見つかりません: $CFG_RUNTIME"
+[ -f "$CFG_RULES" ] || die "中継ルールが見つかりません: $CFG_RULES"
+[ -f "$CFG_SETTINGS" ] || die "権限設定が見つかりません: $CFG_SETTINGS"
+
+# トークンが無いと channel サーバーが即座に落ち、バックグラウンドセッションも道連れになる。
+if [ -z "${DISCORD_BOT_TOKEN:-}" ] && ! grep -qs '^DISCORD_BOT_TOKEN=' "$CFG_STATE_DIR/.env"; then
+  die "Discord のトークンが設定されていません。
+  Claude Code のセッションで /discord:configure <トークン> を実行するか、
+  $CFG_STATE_DIR/.env に DISCORD_BOT_TOKEN=... を書いてください。
+  トークンが無いまま起動すると channel サーバーが落ち、セッションごと終了します。"
+fi
+
+found=$(agent_by_name "$CFG_GW_NAME" || true)
+if [ -n "$found" ]; then
+  state=$(printf '%s' "$found" | cut -f1)
+  id=$(printf '%s' "$found" | cut -f2)
+  if [ "$state" = running ]; then
+    printf 'GW はすでに動いています (%s)。何もしませんでした。\n\n' "$id"
+    printf '  claude attach %s   中を見る\n' "$id"
+    printf '  claude stop %s     止める\n' "$id"
+    exit 0
+  fi
+  printf '停止した GW (%s) が残っていたので片付けます。\n' "$id"
+  claude rm "$id" >/dev/null 2>&1 || true
+fi
+
+mkdir -p "$CFG_GW_CWD"
+
+# ---- 2. 起動 -------------------------------------------------------------
+
+printf 'GW を起動します...\n'
+out=$(
+  cd "$CFG_GW_CWD" && DTW_CONFIG="$DTW_CONFIG" DTW_HOME="$DTW_HOME" \
+  claude --bg \
+    --name "$CFG_GW_NAME" \
+    --channels "$CFG_CHANNEL" \
+    --plugin-dir "$CFG_RUNTIME" \
+    --append-system-prompt-file "$CFG_RULES" \
+    --settings "$CFG_SETTINGS" \
+    --setting-sources user 2>&1
+) || true
+
+id=$(printf '%s' "$out" | sed -n 's/.*backgrounded[^0-9a-f]*\([0-9a-f]\{8\}\).*/\1/p' | head -1)
+if [ -z "$id" ]; then
+  printf '%s\n' "$out" >&2
+  die "起動できませんでした。上の出力を確認してください。"
+fi
+
+# ---- 3. 確認 -------------------------------------------------------------
+
+alive=""
+i=0
+while [ "$i" -lt 15 ]; do
+  found=$(agent_by_name "$CFG_GW_NAME" || true)
+  if [ -n "$found" ] && [ "$(printf '%s' "$found" | cut -f1)" = running ]; then
+    alive=1
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
+if [ -z "$alive" ]; then
+  die "起動直後に終了しました ($id)。
+  channel サーバーが落ちると、バックグラウンドセッションも一緒に終わります。
+  claude logs $id で原因を確認してください。"
+fi
+
+case "$(channel_state "$id")" in
+  ok) : ;;
+  not-allowed)
+    die "channel が承認リストに載っていません ($id)。
+    公式の Discord プラグインを --channels に渡しているか確認してください。" ;;
+  *)
+    printf '注意: channel の登録通知をログから確認できませんでした。claude logs %s で確認してください。\n' "$id" >&2 ;;
+esac
+
+# ---- 4. 案内 -------------------------------------------------------------
+
+cat <<EOF
+
+GW が起動しました (${id})。ターミナルは閉じてかまいません。
+
+  claude attach ${id}   中を見る
+  claude logs ${id}     最近の出力を読む
+  claude stop ${id}     止める
+
+Discord の親チャンネルにスレッドを切り、名前の先頭にリポジトリ名を入れて
+話しかけてください。最初の発言で worker が起動します。
+EOF

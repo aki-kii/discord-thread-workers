@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/verify-outbound.ts\"",
+            "statusMessage": "往路が原文どおりか検査中"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_discord_discord__reply",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/verify-reply.ts\"",
+            "statusMessage": "復路が原文どおりか検査中"
+          }
+        ]
+      }
+    ]
+  }
+}

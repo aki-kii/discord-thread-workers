@@ -1,0 +1,55 @@
+#!/bin/sh
+# GW と worker の一覧を出す。
+
+set -eu
+. "$(dirname "$0")/gw-common.sh"
+
+load_config
+
+claude agents --json 2>/dev/null | python3 - "$CFG_GW_NAME" <<'PY'
+import json, sys, time
+
+gw_name = sys.argv[1]
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+
+def age(ms):
+    if not ms:
+        return "-"
+    s = int(time.time() - ms / 1000)
+    if s < 60:
+        return f"{s}秒"
+    if s < 3600:
+        return f"{s // 60}分"
+    if s < 86400:
+        return f"{s // 3600}時間"
+    return f"{s // 86400}日"
+
+gw, workers = None, []
+for a in rows if isinstance(rows, list) else []:
+    name = a.get("name") or ""
+    if name == gw_name:
+        gw = a
+    elif name.startswith("thread-"):
+        workers.append(a)
+
+def state(a):
+    return (a.get("status") or ("動作中" if a.get("pid") else "停止")).replace("idle", "待機").replace("busy", "作業中").replace("waiting", "入力待ち")
+
+if gw:
+    print(f"GW      {gw.get('id')}  {state(gw)}  起動から{age(gw.get('startedAt'))}")
+else:
+    print("GW      いません。gw-start で起動してください")
+
+print()
+if not workers:
+    print("worker  いません")
+else:
+    print(f"worker  {len(workers)} 件")
+    for a in sorted(workers, key=lambda x: x.get("startedAt") or 0):
+        tid = (a.get("name") or "")[len("thread-"):]
+        print(f"  {a.get('id')}  {state(a):6}  {age(a.get('startedAt')):>5}  thread {tid}")
+        print(f"            {a.get('cwd')}")
+PY
