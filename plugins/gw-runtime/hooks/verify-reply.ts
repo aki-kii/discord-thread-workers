@@ -5,7 +5,7 @@
 import { deny, hasUnrelayed, pass, readTranscript, skip } from "./relay-log.ts";
 
 const TEMPLATES = [
-  "このスレッド名から対象リポジトリを特定できませんでした。スレッド名の先頭にリポジトリ名を入れてください。",
+  "worker を置く場所が設定されていません。config.json の workerRoots を確認してください。",
   "worker が停止しています。次のメッセージで起動し直します。",
 ];
 const TEMPLATE_PREFIXES = ["worker を用意できませんでした:"];

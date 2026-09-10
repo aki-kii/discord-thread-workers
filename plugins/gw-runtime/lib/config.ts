@@ -10,6 +10,7 @@ export type Config = {
   workerRoots: string[];
   workerPermissionMode: string;
   historyLimit: number;
+  pinToRepo: boolean;
 };
 
 export const DTW_HOME =
@@ -40,6 +41,7 @@ export function config(): Config {
     workerRoots: (raw.workerRoots ?? []).map((r: string) => expand(r)),
     workerPermissionMode: String(raw.workerPermissionMode ?? "acceptEdits"),
     historyLimit: Number(raw.historyLimit ?? 50),
+    pinToRepo: raw.pinToRepo !== false,
   };
   return cached;
 }

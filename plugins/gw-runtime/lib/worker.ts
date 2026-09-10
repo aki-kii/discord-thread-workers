@@ -40,6 +40,25 @@ function repoTokenOf(threadName: string): string | null {
   return t ? t : null;
 }
 
+// worker をどこで開くか。
+//
+// 既定は「スレッド名の先頭がリポジトリ名と一致すればそのリポジトリ、しなければ
+// 束ねている親ディレクトリ」。親で開いても、その下のリポジトリは全部読み書きできる。
+// 一致したときにわざわざリポジトリまで降りるのは、そのリポジトリの
+// .claude/settings.json とプロジェクト設定が読まれるのが cwd のときだけだから。
+// 常に親で開きたい場合は設定で pinToRepo を false にする。
+function resolveCwd(threadName: string): string | null {
+  const roots = config().workerRoots.filter((r) => existsSync(r));
+  if (roots.length === 0) return null;
+
+  if (config().pinToRepo) {
+    const token = repoTokenOf(threadName);
+    const repo = token ? findRepo(token) : null;
+    if (repo) return repo;
+  }
+  return roots[0]!;
+}
+
 function findRepo(token: string): string | null {
   for (const root of config().workerRoots) {
     if (!existsSync(root)) continue;
@@ -162,17 +181,14 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
       cacheDrop(threadId); // 再開できなかった控えは捨てて新規に落とす
     }
 
-    // 3. 新規に立てる。スレッド名からリポジトリを決め、履歴で文脈だけ復元する
-    const tname = await channelName(threadId);
-    const token = repoTokenOf(tname);
-    const cwd = token ? findRepo(token) : null;
+    // 3. 新規に立てる。作業ディレクトリを決め、履歴で文脈だけ復元する
+    const cwd = resolveCwd(await channelName(threadId));
     if (!cwd) {
       return {
         state: "no_repo",
         name,
-        message: token
-          ? `リポジトリ ${token} が見つかりませんでした`
-          : "スレッド名からリポジトリ名を読み取れませんでした",
+        message:
+          "worker を置く場所がありません。設定の workerRoots に実在するディレクトリを書いてください",
       };
     }
 

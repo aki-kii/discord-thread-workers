@@ -24,6 +24,7 @@ ensure_config() {
   cat > "$DTW_CONFIG" <<EOF
 {
   "workerRoots": ["$HOME/dev/src/github.com"],
+  "pinToRepo": true,
   "gwName": "gw",
   "gwCwd": "$DTW_HOME/run",
   "channelPlugin": "plugin:discord@claude-plugins-official",
@@ -35,8 +36,9 @@ EOF
   cat >&2 <<EOF
 設定ファイルを作りました: $DTW_CONFIG
 
-workerRoots を確認してください。スレッド名の先頭のリポジトリ名を、
-ここに挙げたディレクトリの直下と 1 階層下から探します。
+workerRoots を確認してください。先頭が worker を開く既定の場所になります。
+リポジトリを束ねている親ディレクトリを指してください。
+スレッド名の先頭がその下のリポジトリ名と一致したときは、そのリポジトリを直接開きます。
 
 リポジトリを clone して開発する場合は "runtimePath" を足して、
 そのチェックアウトの plugins/gw-runtime を指してください。
