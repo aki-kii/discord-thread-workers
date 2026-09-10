@@ -16,6 +16,17 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "$1 が見つかりません。$2"
 }
 
+# 端末向けの装飾を落として素のテキストにする。
+# claude の出力には色や制御文字が混ざる。付いたまま切り出しや照合をすると黙って外れる。
+strip_ansi() {
+  python3 -c '
+import re, sys
+txt = sys.stdin.buffer.read().decode("utf-8", "replace")
+txt = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a", "", txt)
+sys.stdout.write(re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", txt))
+'
+}
+
 # 設定が無ければ雛形を書いて終わる。中身を確認してもらってから出直す。
 ensure_config() {
   [ -f "$DTW_CONFIG" ] && return 0
@@ -150,17 +161,10 @@ PY
 
 # 起動ログから channels の登録状況を判定する。ok / not-allowed / missing を返す。
 channel_state() {
-  GW_LOGS="$(claude logs "$1" 2>/dev/null | tr -d '\000' || true)" python3 <<'PY'
-import os, re
-
-txt = os.environ.get("GW_LOGS") or ""
-txt = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a", "", txt)
-txt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", txt)
-if "not on the approved channels allowlist" in txt:
-    print("not-allowed")
-elif "inject directly in this session" in txt:
-    print("ok")
-else:
-    print("missing")
-PY
+  _logs=$(claude logs "$1" 2>/dev/null | strip_ansi || true)
+  case "$_logs" in
+    *"not on the approved channels allowlist"*) printf 'not-allowed\n' ;;
+    *"inject directly in this session"*) printf 'ok\n' ;;
+    *) printf 'missing\n' ;;
+  esac
 }
