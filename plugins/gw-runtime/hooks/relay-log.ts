@@ -5,7 +5,9 @@
 // 行に入る（こちらは本文が origin にほぐれて入っている）。どちらも見る。
 //
 // 送ったものは `type: "assistant"` の tool_use から拾う。どれも本文が原形のまま
-// 入っているので、突き合わせは単純な文字列比較で済む。
+// 入っているので、突き合わせは単純な文字列比較で済む。ただし tool_use にあるのは
+// 「送ろうとした」記録でしかない。検査中の呼び出し自身もそこに並ぶし、この hook が
+// 拒んだ試行も残る。どちらも届いてはいないので、tool_result まで見て振り落とす。
 
 import { readFileSync } from "node:fs";
 
@@ -31,7 +33,8 @@ export function readTranscript(
   sentFields: string[],
 ): Bundle {
   const inbound: Inbound[] = [];
-  const sent: string[] = [];
+  const attempts: { id: string; body: string }[] = [];
+  const delivered = new Set<string>();
 
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line.trim()) continue;
@@ -43,10 +46,22 @@ export function readTranscript(
       continue;
     }
 
-    // 手が空いているときに届いたもの
-    if (row.type === "user" && typeof row.message?.content === "string") {
-      const hit = fromText(row.message.content, kind);
-      if (hit) inbound.push(hit);
+    if (row.type === "user") {
+      // 手が空いているときに届いたもの
+      if (typeof row.message?.content === "string") {
+        const hit = fromText(row.message.content, kind);
+        if (hit) inbound.push(hit);
+        continue;
+      }
+
+      // 送ろうとしたものの結果。エラーで返ったものは届いていない。
+      if (Array.isArray(row.message?.content)) {
+        for (const block of row.message.content) {
+          if (block?.type !== "tool_result") continue;
+          const id = String(block.tool_use_id ?? "");
+          if (id && block.is_error !== true) delivered.add(id);
+        }
+      }
       continue;
     }
 
@@ -68,20 +83,24 @@ export function readTranscript(
       continue;
     }
 
-    // 送ったもの
+    // 送ろうとしたもの
     if (row.type === "assistant" && Array.isArray(row.message?.content)) {
       for (const block of row.message.content) {
         if (block?.type !== "tool_use" || block.name !== sentToolName) continue;
         for (const f of sentFields) {
           const v = block.input?.[f];
           if (typeof v === "string") {
-            sent.push(v);
+            attempts.push({ id: String(block.id ?? ""), body: v });
             break;
           }
         }
       }
     }
   }
+
+  // 結果が返っていて、それがエラーでないものだけが「送った」。
+  // 検査中の呼び出しは結果がまだ無いので、ここで自然に落ちる。
+  const sent = attempts.filter((a) => delivered.has(a.id)).map((a) => a.body);
 
   return { inbound, sent };
 }
