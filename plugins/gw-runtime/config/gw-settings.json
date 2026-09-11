@@ -1,7 +1,7 @@
 {
   "autoMemoryEnabled": false,
   "permissions": {
-    "defaultMode": "default",
+    "defaultMode": "bypassPermissions",
     "allow": [
       "SendMessage",
       "ListAgents",
