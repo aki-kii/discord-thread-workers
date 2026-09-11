@@ -107,6 +107,7 @@ out = {
     "CFG_GW_CWD": path(c.get("gwCwd", "~/.claude/discord-thread-workers/run")),
     "CFG_CHANNEL": str(c.get("channelPlugin", "plugin:discord@claude-plugins-official")),
     "CFG_STATE_DIR": path(c.get("discordStateDir", "~/.claude/channels/discord")),
+    "CFG_GW_PERMISSION_MODE": str(c.get("gwPermissionMode", "default")),
 }
 for k, v in out.items():
     print(f"{k}={shlex.quote(v)}")
@@ -119,7 +120,46 @@ PY
   リポジトリから動かす場合は $DTW_CONFIG に \"runtimePath\" を書いてください。"
 
   CFG_RULES="$CFG_RUNTIME/prompts/relay-rules.md"
-  CFG_SETTINGS="$CFG_RUNTIME/config/gw-settings.json"
+  CFG_SETTINGS=$(materialize_settings "$CFG_RUNTIME/config/gw-settings.json")
+}
+
+# GW の権限設定を組み立てる。
+#
+# 雛形（gw-settings.json）の deny はそのまま使い、defaultMode だけ
+# config.json の gwPermissionMode で差し替えて $DTW_HOME に書き出す。
+#
+# なぜモードを変えられる必要があるか。
+#
+# セッション間のメッセージは、受け取る側のほうが権限モードが強いと
+# 承認待ちで保留される。GW は既定で "default"、つまりいちばん弱い。
+# worker を bypassPermissions で動かすと、GW から worker への受け渡しが
+# そこで止まる。手元なら人が承認できるが、無人の環境では永久に止まる。
+#
+# deny の一覧はモードと独立に効くので、モードを上げても GW が
+# Bash や Edit を使えるようにはならない。中継しかしないという性質は保たれる。
+materialize_settings() {
+  template=$1
+  [ -f "$template" ] || die "権限設定の雛形が見つかりません: $template"
+
+  if [ "${CFG_GW_PERMISSION_MODE:-default}" = "default" ]; then
+    printf '%s' "$template"
+    return
+  fi
+
+  out="$DTW_HOME/gw-settings.json"
+  mkdir -p "$DTW_HOME"
+  python3 - "$template" "$out" "$CFG_GW_PERMISSION_MODE" <<'PY'
+import json, sys
+
+template, out, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(template) as f:
+    settings = json.load(f)
+settings.setdefault("permissions", {})["defaultMode"] = mode
+with open(out, "w") as f:
+    json.dump(settings, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+PY
+  printf '%s' "$out"
 }
 
 # 一覧の取得。ヒアドキュメントでスクリプトを渡すと標準入力がそちらに奪われるので、
