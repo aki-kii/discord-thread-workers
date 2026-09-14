@@ -29,7 +29,7 @@ ensure_config() {
   "gwCwd": "$DTW_HOME/run",
   "channelPlugin": "plugin:discord@claude-plugins-official",
   "discordStateDir": "$HOME/.claude/channels/discord",
-  "workerPermissionMode": "acceptEdits",
+  "workerPermissionMode": "auto",
   "historyLimit": 50
 }
 EOF

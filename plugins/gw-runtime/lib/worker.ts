@@ -105,14 +105,25 @@ function seedPrompt(lines: { author: string; bot: boolean; text: string }[]): st
   ].join("\n");
 }
 
+// worker のルールと権限はこのプラグインに同梱されている。設定に場所を持たせない。
+const WORKER_RULES = join(import.meta.dir, "..", "prompts", "worker-rules.md");
+
+// 返事の経路だけは、どの権限モードで動かしても通るようにしておく。
+// SendMessage が確認待ちになると、worker は落ちもエラーも出さず、
+// 端末のいないところで黙って止まる。外から見て壊れたと分からない壊れ方になる。
+const WORKER_SETTINGS = join(
+  import.meta.dir,
+  "..",
+  "config",
+  "worker-settings.json",
+);
+
 async function spawnWorker(
   threadId: string,
   cwd: string,
   prompt: string,
 ): Promise<void> {
   const cfg = config();
-  // worker のルールはこのプラグインに同梱されている。設定に場所を持たせない。
-  const workerRules = join(import.meta.dir, "..", "prompts", "worker-rules.md");
   const p = Bun.spawn(
     [
       "claude",
@@ -120,7 +131,9 @@ async function spawnWorker(
       "--name",
       workerName(threadId),
       "--append-system-prompt-file",
-      workerRules,
+      WORKER_RULES,
+      "--settings",
+      WORKER_SETTINGS,
       "--permission-mode",
       cfg.workerPermissionMode,
       prompt,
@@ -131,7 +144,7 @@ async function spawnWorker(
 }
 
 async function resumeWorker(threadId: string, sessionId: string): Promise<void> {
-  // 再開でも権限の方針を渡し直す。付け忘れると、止まって戻ってきた worker だけが
+  // 再開でも権限を渡し直す。付け忘れると、止まって戻ってきた worker だけが
   // 既定の権限で動き、端末のいないところで確認ダイアログに当たって止まる。
   const p = Bun.spawn(
     [
@@ -141,6 +154,8 @@ async function resumeWorker(threadId: string, sessionId: string): Promise<void> 
       sessionId,
       "--name",
       workerName(threadId),
+      "--settings",
+      WORKER_SETTINGS,
       "--permission-mode",
       config().workerPermissionMode,
     ],
