@@ -105,14 +105,25 @@ function seedPrompt(lines: { author: string; bot: boolean; text: string }[]): st
   ].join("\n");
 }
 
+// worker のルールと権限はこのプラグインに同梱されている。設定に場所を持たせない。
+const WORKER_RULES = join(import.meta.dir, "..", "prompts", "worker-rules.md");
+
+// 返事の経路だけは、どの権限モードで動かしても通るようにしておく。
+// SendMessage が確認待ちになると、worker は落ちもエラーも出さず、
+// 端末のいないところで黙って止まる。外から見て壊れたと分からない壊れ方になる。
+const WORKER_SETTINGS = join(
+  import.meta.dir,
+  "..",
+  "config",
+  "worker-settings.json",
+);
+
 async function spawnWorker(
   threadId: string,
   cwd: string,
   prompt: string,
 ): Promise<void> {
   const cfg = config();
-  // worker のルールはこのプラグインに同梱されている。設定に場所を持たせない。
-  const workerRules = join(import.meta.dir, "..", "prompts", "worker-rules.md");
   const p = Bun.spawn(
     [
       "claude",
@@ -120,7 +131,9 @@ async function spawnWorker(
       "--name",
       workerName(threadId),
       "--append-system-prompt-file",
-      workerRules,
+      WORKER_RULES,
+      "--settings",
+      WORKER_SETTINGS,
       "--permission-mode",
       cfg.workerPermissionMode,
       prompt,
@@ -134,6 +147,7 @@ async function resumeWorker(sessionId: string): Promise<void> {
   // 再開はフラグを添えずに呼ぶ。名前も権限の方針も作業ディレクトリも、セッションが
   // 立ったときのものを自分で覚えている。ここで渡し直すと CLI は「設定が違う」と見て、
   // 続きではなく別のセッション ID の複製を立てる。元の会話には二度と戻れない。
+  // --settings も同じ理由で渡さない。渡せば複製が立ち、元の会話ごと失う。
   const p = Bun.spawn(["claude", "--bg", "--resume", sessionId], {
     stdout: "pipe",
     stderr: "pipe",

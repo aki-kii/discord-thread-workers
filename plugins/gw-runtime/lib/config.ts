@@ -40,7 +40,7 @@ export function config(): Config {
       raw.discordStateDir ?? join(homedir(), ".claude", "channels", "discord"),
     ),
     workerRoots: (raw.workerRoots ?? []).map((r: string) => expand(r)),
-    workerPermissionMode: String(raw.workerPermissionMode ?? "acceptEdits"),
+    workerPermissionMode: String(raw.workerPermissionMode ?? "auto"),
     historyLimit: Number(raw.historyLimit ?? 50),
     pinToRepo: raw.pinToRepo !== false,
     reapIntervalMinutes: Number(raw.reapIntervalMinutes ?? 60),

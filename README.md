@@ -75,7 +75,7 @@ worker 用のスレッドをぶら下げる親チャンネルを 1 つ作り、�
   "gwCwd": "/Users/you/.claude/discord-thread-workers/run",
   "channelPlugin": "plugin:discord@claude-plugins-official",
   "discordStateDir": "/Users/you/.claude/channels/discord",
-  "workerPermissionMode": "acceptEdits",
+  "workerPermissionMode": "auto",
   "historyLimit": 50,
   "reapIntervalMinutes": 60
 }
@@ -176,18 +176,29 @@ Bash も Edit も Read も塞いであるので、モードが何であれ GW �
 返事が来ない。** worker は立っていて、GW も受け取っている。渡すところだけが
 止まっている。
 
+### worker の権限モード
 
 worker は端末に繋がっていないので、権限の確認ダイアログに答えられる人がいない。
-そのため `workerPermissionMode`（既定は `acceptEdits`）で事前に方針を決め、
+そのため `workerPermissionMode`（既定は `auto`）で事前に方針を決め、
 判断が要ることは worker が**文章でスレッドに聞く**運用にしている。
 
-指定できるのは `claude --permission-mode` が受け付ける値。編集だけ自動で通す
-`acceptEdits`、全部自動で通す `bypassPermissions` などがある。`default` は
-設定ファイル側の言い方で、この項目に書くと worker が起動しないので注意。
+指定できるのは `claude --permission-mode` が受け付ける値。自動で判断する `auto`、
+編集だけ自動で通す `acceptEdits`、全部自動で通す `bypassPermissions` などがある。
+`default` は設定ファイル側の言い方で、この項目に書くと worker が起動しないので注意。
 
-方針は**新規に立てるときも、止まった会話を再開するときも**渡される。設定を変えたら、
-すでに動いている worker には効かないので、止めて立て直す（`stop_worker` のあと
-スレッドに何か書く、あるいは `/gw-control:stop --workers`）。
+**`acceptEdits` にはしないこと。** 自動で通るのはファイル編集だけで、返事に使う
+`SendMessage` は確認待ちになる。答える人がいないので、worker は落ちもエラーも出さず
+そこで止まる。`claude agents` では running のままなので、外から見て壊れたと分からない。
+
+ただし返事の経路だけは、モードに関わらず通るようにしてある。同梱の
+`config/worker-settings.json` が `SendMessage` を `allow` に入れていて、
+これは worker を**新規に立てるとき**に `--settings` で渡る。**モードを間違えても、
+返事だけは出せる。**
+
+方針も settings も、渡るのは新規に立てるときだけ。止まった会話を再開するときは何も
+添えずに呼ぶ（フラグを付けると CLI が続きではなく複製のセッションを立ててしまい、
+元の会話に戻れなくなる）。設定を変えたら、すでにある worker には効かないので、止めて
+立て直す（`stop_worker` のあとスレッドに何か書く、あるいは `/gw-control:stop --workers`）。
 
 危険な操作を機械的に塞ぎたい場合は `permissions.deny` を書く。ただし置き場所に注意。
 リポジトリの `.claude/settings.json` は、**worker がそのリポジトリを cwd として開いた
