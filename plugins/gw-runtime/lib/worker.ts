@@ -143,24 +143,15 @@ async function spawnWorker(
   await p.exited;
 }
 
-async function resumeWorker(threadId: string, sessionId: string): Promise<void> {
-  // 再開でも権限を渡し直す。付け忘れると、止まって戻ってきた worker だけが
-  // 既定の権限で動き、端末のいないところで確認ダイアログに当たって止まる。
-  const p = Bun.spawn(
-    [
-      "claude",
-      "--bg",
-      "--resume",
-      sessionId,
-      "--name",
-      workerName(threadId),
-      "--settings",
-      WORKER_SETTINGS,
-      "--permission-mode",
-      config().workerPermissionMode,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
+async function resumeWorker(sessionId: string): Promise<void> {
+  // 再開はフラグを添えずに呼ぶ。名前も権限の方針も作業ディレクトリも、セッションが
+  // 立ったときのものを自分で覚えている。ここで渡し直すと CLI は「設定が違う」と見て、
+  // 続きではなく別のセッション ID の複製を立てる。元の会話には二度と戻れない。
+  // --settings も同じ理由で渡さない。渡せば複製が立ち、元の会話ごと失う。
+  const p = Bun.spawn(["claude", "--bg", "--resume", sessionId], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   await p.exited;
 }
 
@@ -227,7 +218,7 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
     const stoppedSessionId =
       live?.sessionId ?? (await resumableFromCache(threadId));
     if (stoppedSessionId) {
-      await resumeWorker(threadId, stoppedSessionId);
+      await resumeWorker(stoppedSessionId);
       const res = await afterStart(threadId, "resumed", live?.cwd ?? "");
       if (res.state !== "error") return res;
       cacheDrop(threadId); // 再開できなかった控えは捨てて新規に落とす
