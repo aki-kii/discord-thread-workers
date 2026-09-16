@@ -159,6 +159,9 @@ async function afterStart(
   threadId: string,
   state: EnsureState,
   cwd: string,
+  // 再開のときだけ渡す。戻ってきたセッションがこれと違えば、続きではなく複製が
+  // 立っている。黙って進むと元の会話を失ったことに誰も気づけないので言い残す。
+  expectedSessionId?: string,
 ): Promise<EnsureResult> {
   const name = workerName(threadId);
   const live = await waitForRunning(name);
@@ -176,7 +179,28 @@ async function afterStart(
       createdAt: Date.now(),
     });
   }
-  return { state, name, id: live.id, cwd: live.cwd ?? cwd };
+
+  const forked =
+    expectedSessionId !== undefined &&
+    live.sessionId !== undefined &&
+    live.sessionId !== expectedSessionId;
+  if (forked) {
+    console.error(
+      `[gw-runtime] ${name}: 再開が ${expectedSessionId} ではなく ${live.sessionId} に繋がりました。元の会話は続いていません。`,
+    );
+  }
+
+  return {
+    state,
+    name,
+    id: live.id,
+    cwd: live.cwd ?? cwd,
+    ...(forked
+      ? {
+          message: `再開しましたが、元の会話 (${expectedSessionId}) ではなく新しいセッション (${live.sessionId}) に繋がりました。それまでの作業の状態は引き継がれていません。`,
+        }
+      : {}),
+  };
 }
 
 // スレッドかどうかは ID について変わらないので、一度引いたら覚えておく。
@@ -219,7 +243,12 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
       live?.sessionId ?? (await resumableFromCache(threadId));
     if (stoppedSessionId) {
       await resumeWorker(stoppedSessionId);
-      const res = await afterStart(threadId, "resumed", live?.cwd ?? "");
+      const res = await afterStart(
+        threadId,
+        "resumed",
+        live?.cwd ?? "",
+        stoppedSessionId,
+      );
       if (res.state !== "error") return res;
       cacheDrop(threadId); // 再開できなかった控えは捨てて新規に落とす
     }

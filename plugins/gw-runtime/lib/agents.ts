@@ -38,14 +38,29 @@ export function threadIdOf(name: string | undefined): string | null {
 
 export const isRunning = (a: Agent): boolean => Boolean(a.pid);
 
+// 台帳は同じ name の行を消さずに溜める。死んだ行が先に並んでいると、素直に
+// 先頭を取る書き方では生きている worker を見落とし、毎回立て直しに落ちる。
+// 待ち受けも同じ行しか見ないので、新しく立てた worker が実際に走っていても
+// 待ち切れて error になる。走っている行を先に、同じなら新しい行を選ぶ。
+function pickLive(rows: Agent[]): Agent | null {
+  let best: Agent | null = null;
+  for (const a of rows) {
+    if (!best || preferable(a, best)) best = a;
+  }
+  return best;
+}
+
+function preferable(a: Agent, over: Agent): boolean {
+  if (isRunning(a) !== isRunning(over)) return isRunning(a);
+  return (a.startedAt ?? 0) > (over.startedAt ?? 0);
+}
+
 export async function findByName(name: string): Promise<Agent | null> {
-  const rows = await listAgents();
-  return rows.find((a) => a.name === name) ?? null;
+  return pickLive((await listAgents()).filter((a) => a.name === name));
 }
 
 export async function findBySessionId(sessionId: string): Promise<Agent | null> {
-  const rows = await listAgents();
-  return rows.find((a) => a.sessionId === sessionId) ?? null;
+  return pickLive((await listAgents()).filter((a) => a.sessionId === sessionId));
 }
 
 // 起動直後は台帳に載るまで少し間がある。載って走り出すまで待つ。
