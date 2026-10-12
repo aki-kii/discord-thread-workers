@@ -162,15 +162,16 @@ Discord はスレッドを閉じたことを知らせてこない。公式プラ
 
 ### GW の権限モード
 
-GW は `bypassPermissions` で動く。**GW を縛っているのはモードではなく、
+GW は `auto` で動く。**GW を縛っているのはモードではなく、
 `gw-settings.json` の `deny` の一覧**で、こちらはモードと無関係に効く。
 Bash も Edit も Read も塞いであるので、モードが何であれ GW は中継しかできない。
 
-モードを上げてあるのは、**セッション間のメッセージの受け渡しのため**。
-受け取る側のほうが権限モードが強いと、Claude Code は「利用者の承認が要る」と
-判断して保留する。worker を `bypassPermissions` で動かす構成（端末に人が
-いない環境では必須）だと、GW が弱いままでは GW から worker への受け渡しが
-そこで止まる。
+モードを worker にそろえてあるのは、**セッション間のメッセージの受け渡しのため**。
+送る側と受け取る側で権限モードが違うと、受け取る側の Claude Code は
+「利用者の承認が要る」と判断して保留する。強い弱いではなく、違えば止まる。
+GW を `bypassPermissions`、worker を `auto` にした構成では、GW から worker への
+受け渡しがそこで止まった。`workerPermissionMode` を変えたら、`gw-settings.json` の
+`defaultMode` も同じ値にする。
 
 症状が分かりにくい。**bot は反応する（Discord に「書き込み中」が出る）のに
 返事が来ない。** worker は立っていて、GW も受け取っている。渡すところだけが

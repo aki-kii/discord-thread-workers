@@ -1,7 +1,9 @@
 {
   "autoMemoryEnabled": false,
+  "model": "haiku",
+  "effortLevel": "low",
   "permissions": {
-    "defaultMode": "bypassPermissions",
+    "defaultMode": "auto",
     "allow": [
       "SendMessage",
       "ListAgents",
