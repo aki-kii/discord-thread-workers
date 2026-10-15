@@ -142,12 +142,18 @@ async function spawnWorker(
   await p.exited;
 }
 
-async function resumeWorker(sessionId: string): Promise<void> {
+async function resumeWorker(sessionId: string, cwd: string): Promise<void> {
   // 再開はフラグを添えずに呼ぶ。名前も権限の方針も作業ディレクトリも、セッションが
   // 立ったときのものを自分で覚えている。ここで渡し直すと CLI は「設定が違う」と見て、
   // 続きではなく別のセッション ID の複製を立てる。元の会話には二度と戻れない。
   // --settings も同じ理由で渡さない。渡せば複製が立ち、元の会話ごと失う。
+  //
+  // ただし、プロセスの作業ディレクトリだけは元の場所で立てる。gw-switch の直後は
+  // 切り替え先の台帳にこのセッションが無く、CLI は立ったディレクトリをそのまま使う。
+  // 何も渡さないと MCP サーバー（このプラグインのフォルダ）で立ち、そこの .mcp.json の
+  // 承認ダイアログで、端末のいないまま止まる。
   const p = Bun.spawn(["claude", "--bg", "--resume", sessionId], {
+    cwd: cwd || undefined,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -158,9 +164,10 @@ async function afterStart(
   threadId: string,
   state: EnsureState,
   cwd: string,
+  sessionId?: string,
 ): Promise<EnsureResult> {
   const name = workerName(threadId);
-  const live = await waitForRunning(name);
+  const live = await waitForRunning(name, undefined, sessionId);
   if (!live) {
     return {
       state: "error",
@@ -208,7 +215,10 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
     }
 
     // 1. 生きている
-    const live: Agent | null = await findByName(name);
+    // 切り替え先のアカウントで再開したセッションは、台帳に名前が載らない。
+    // 控えのセッション ID でも探さないと、生きているのに何度も再開を重ねてしまう。
+    const cached = cacheRead()[threadId];
+    const live: Agent | null = await findByName(name, cached?.sessionId);
     if (live && isRunning(live)) {
       return { state: "running", name, id: live.id, cwd: live.cwd };
     }
@@ -217,8 +227,14 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
     const stoppedSessionId =
       live?.sessionId ?? (await resumableFromCache(threadId));
     if (stoppedSessionId) {
-      await resumeWorker(stoppedSessionId);
-      const res = await afterStart(threadId, "resumed", live?.cwd ?? "");
+      const resumeCwd = live?.cwd ?? cached?.cwd ?? "";
+      await resumeWorker(stoppedSessionId, resumeCwd);
+      const res = await afterStart(
+        threadId,
+        "resumed",
+        resumeCwd,
+        stoppedSessionId,
+      );
       if (res.state !== "error") return res;
       cacheDrop(threadId); // 再開できなかった控えは捨てて新規に落とす
     }
