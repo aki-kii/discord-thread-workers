@@ -38,9 +38,16 @@ export function threadIdOf(name: string | undefined): string | null {
 
 export const isRunning = (a: Agent): boolean => Boolean(a.pid);
 
-export async function findByName(name: string): Promise<Agent | null> {
-  const rows = await listAgents();
-  return rows.find((a) => a.name === name) ?? null;
+// 名前か、控えのセッション ID のどちらかで探す。gw-switch で別のアカウントへ移ると、
+// 再開したセッションは移った先の台帳に名前なしで載るため。
+export async function findByName(
+  name: string,
+  sessionId?: string,
+): Promise<Agent | null> {
+  const rows = (await listAgents()).filter(
+    (a) => a.name === name || (sessionId && a.sessionId === sessionId),
+  );
+  return rows.find(isRunning) ?? rows[0] ?? null;
 }
 
 
@@ -48,10 +55,11 @@ export async function findByName(name: string): Promise<Agent | null> {
 export async function waitForRunning(
   name: string,
   timeoutMs = 20_000,
+  sessionId?: string,
 ): Promise<Agent | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const a = await findByName(name);
+    const a = await findByName(name, sessionId);
     if (a && isRunning(a)) return a;
     await Bun.sleep(700);
   }
