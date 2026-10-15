@@ -121,7 +121,7 @@ async function spawnWorker(
   threadId: string,
   cwd: string,
   prompt: string,
-): Promise<void> {
+): Promise<string> {
   const cfg = config();
   const p = Bun.spawn(
     [
@@ -139,10 +139,21 @@ async function spawnWorker(
     ],
     { cwd, stdout: "pipe", stderr: "pipe" },
   );
-  await p.exited;
+  return await outputOf(p);
 }
 
-async function resumeWorker(sessionId: string, cwd: string): Promise<void> {
+// CLI が起動前に断ったときの理由（作業フォルダが信頼されていない、など）は出力にしか
+// 残らない。捨てると「起動しませんでした」としか言えず、原因を追えなくなる。
+async function outputOf(p: Bun.Subprocess<"ignore", "pipe", "pipe">): Promise<string> {
+  const [out, err] = await Promise.all([
+    new Response(p.stdout).text(),
+    new Response(p.stderr).text(),
+  ]);
+  await p.exited;
+  return `${err}\n${out}`.trim();
+}
+
+async function resumeWorker(sessionId: string, cwd: string): Promise<string> {
   // 再開はフラグを添えずに呼ぶ。名前も権限の方針も作業ディレクトリも、セッションが
   // 立ったときのものを自分で覚えている。ここで渡し直すと CLI は「設定が違う」と見て、
   // 続きではなく別のセッション ID の複製を立てる。元の会話には二度と戻れない。
@@ -157,22 +168,24 @@ async function resumeWorker(sessionId: string, cwd: string): Promise<void> {
     stdout: "pipe",
     stderr: "pipe",
   });
-  await p.exited;
+  return await outputOf(p);
 }
 
 async function afterStart(
   threadId: string,
   state: EnsureState,
   cwd: string,
+  cliOutput: string,
   sessionId?: string,
 ): Promise<EnsureResult> {
   const name = workerName(threadId);
   const live = await waitForRunning(name, undefined, sessionId);
   if (!live) {
+    const detail = cliOutput ? `\nclaude の出力: ${cliOutput.slice(0, 500)}` : "";
     return {
       state: "error",
       name,
-      message: `worker が起動しませんでした (${name})。claude agents で確認してください。`,
+      message: `worker が起動しませんでした (${name})。claude agents で確認してください。${detail}`,
     };
   }
   if (live.sessionId) {
@@ -228,11 +241,12 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
       live?.sessionId ?? (await resumableFromCache(threadId));
     if (stoppedSessionId) {
       const resumeCwd = live?.cwd ?? cached?.cwd ?? "";
-      await resumeWorker(stoppedSessionId, resumeCwd);
+      const out = await resumeWorker(stoppedSessionId, resumeCwd);
       const res = await afterStart(
         threadId,
         "resumed",
         resumeCwd,
+        out,
         stoppedSessionId,
       );
       if (res.state !== "error") return res;
@@ -252,8 +266,8 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
 
     const lines = await history(threadId, config().historyLimit + 1);
     lines.pop(); // 引き金になった発言は履歴から外す。通常の経路で届くため
-    await spawnWorker(threadId, cwd, seedPrompt(lines));
-    return await afterStart(threadId, "created", cwd);
+    const out = await spawnWorker(threadId, cwd, seedPrompt(lines));
+    return await afterStart(threadId, "created", cwd, out);
   } catch (e) {
     return { state: "error", name, message: String(e) };
   }

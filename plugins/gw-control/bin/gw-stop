@@ -19,16 +19,26 @@ fi
 
 [ "${1:-}" = "--workers" ] || exit 0
 
+# 名前だけでなく、控えてあるセッション ID でも探す。切り替え先のアカウントで再開した
+# worker は、名前を自動で付け替えられることがある。名前だけで探すと止め損ね、
+# 同じ会話を二つのアカウントのプロセスが握ったまま残る。
 claude agents --json 2>/dev/null | python3 -c '
 import json, sys
 try:
     rows = json.load(sys.stdin)
 except Exception:
     rows = []
+try:
+    with open(sys.argv[1]) as f:
+        known = {e.get("sessionId") for e in json.load(f).values()}
+except Exception:
+    known = set()
 for a in rows if isinstance(rows, list) else []:
-    if (a.get("name") or "").startswith("thread-") and a.get("pid"):
+    if not a.get("pid"):
+        continue
+    if (a.get("name") or "").startswith("thread-") or a.get("sessionId") in known:
         print(a.get("id"))
-' | while read -r wid; do
+' "$DTW_HOME/workers.json" | while read -r wid; do
   [ -n "$wid" ] || continue
   claude stop "$wid" >/dev/null 2>&1 || true
   printf 'worker を止めました (%s)。\n' "$wid"

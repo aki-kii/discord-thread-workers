@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "gw-control",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Discord スレッド中継の GW セッションを起動・確認・停止・再起動する。判断はすべて bin/ のスクリプトに閉じ込めてあり、スキルは呼ぶだけ",
   "author": { "name": "aki-kii" },
   "repository": "https://github.com/aki-kii/discord-thread-workers",
