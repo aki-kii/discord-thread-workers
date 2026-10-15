@@ -6,6 +6,8 @@ set -eu
 
 load_config
 
+printf 'アカウント  %s\n\n' "$(account_label "$(active_config_dir)")"
+
 AGENTS_JSON="$(agents_json)" python3 - "$CFG_GW_NAME" <<'PY'
 import json, os, sys, time
 

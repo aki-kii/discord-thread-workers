@@ -11,7 +11,6 @@ import {
 import { channelInfo, history } from "./discord.ts";
 import {
   findByName,
-  findBySessionId,
   isRunning,
   waitForRunning,
   workerName,
@@ -247,6 +246,8 @@ export async function ensureWorker(threadId: string): Promise<EnsureResult> {
 async function resumableFromCache(threadId: string): Promise<string | null> {
   const entry = cacheRead()[threadId];
   if (!entry?.sessionId) return null;
-  // 台帳に痕跡が残っているものだけ再開を試す
-  return (await findBySessionId(entry.sessionId)) ? entry.sessionId : null;
+  // 台帳に載っていなくても再開を試す。台帳はアカウント（CLAUDE_CONFIG_DIR）ごとに別で、
+  // gw-switch の直後は切り替え先の台帳にまだ載っていないため。会話の記録を共有していれば
+  // 続きから再開でき、記録が無ければ afterStart が失敗を返し、新規に立てる経路へ落ちる。
+  return entry.sessionId;
 }

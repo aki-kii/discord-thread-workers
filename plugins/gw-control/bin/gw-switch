@@ -1,0 +1,38 @@
+#!/bin/sh
+# GW と worker を、このスクリプトを実行したセッションのアカウントへ移す。
+#
+# 片方のアカウントがレートリミットに当たると、そのアカウントの GW は返事ができない。
+# そこで、もう一方のアカウントで開いておいたセッション（Remote Control など）から実行する。
+# 切り替え先は実行したセッションの CLAUDE_CONFIG_DIR で決まる。名前を打たせないのは打ち間違いを防ぐため。
+#
+# 会話の記録（projects）をアカウント間で共有していれば、worker は次の発言で同じ会話を再開する。
+
+set -eu
+. "$(dirname "$0")/gw-common.sh"
+
+# load_config が今のアカウントで上書きする前に、切り替え先を控えておく。
+target="${CLAUDE_CONFIG_DIR:-}"
+
+load_config
+current=$(active_config_dir)
+
+if [ "$target" = "$current" ]; then
+  printf 'すでに %s で動いています。何もしませんでした。\n' "$(account_label "$target")"
+  exit 0
+fi
+
+if [ -n "$target" ] && [ ! -d "$target" ]; then
+  die "切り替え先の設定ディレクトリがありません: $target"
+fi
+
+printf '%s から %s へ切り替えます。\n\n' "$(account_label "$current")" "$(account_label "$target")"
+
+# 今のアカウントで動いている GW と worker を止める。止めるのはローカルの操作なので、
+# レートリミットに当たっていても効く。
+"$(dirname "$0")/gw-stop" --workers
+
+mkdir -p "$DTW_HOME"
+printf '%s\n' "$target" > "$ACTIVE_FILE"
+
+printf '\n'
+exec "$(dirname "$0")/gw-start"

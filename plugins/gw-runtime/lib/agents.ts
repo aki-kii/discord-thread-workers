@@ -43,10 +43,6 @@ export async function findByName(name: string): Promise<Agent | null> {
   return rows.find((a) => a.name === name) ?? null;
 }
 
-export async function findBySessionId(sessionId: string): Promise<Agent | null> {
-  const rows = await listAgents();
-  return rows.find((a) => a.sessionId === sessionId) ?? null;
-}
 
 // 起動直後は台帳に載るまで少し間がある。載って走り出すまで待つ。
 export async function waitForRunning(

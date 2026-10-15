@@ -120,6 +120,39 @@ PY
 
   CFG_RULES="$CFG_RUNTIME/prompts/relay-rules.md"
   CFG_SETTINGS="$CFG_RUNTIME/config/gw-settings.json"
+
+  use_active_account
+}
+
+# ---- アカウント ------------------------------------------------------------
+#
+# GW と worker をどのアカウントで動かすかは、CLAUDE_CONFIG_DIR だけで決まる。
+# 今のアカウントは DTW_HOME/active-config-dir に 1 行で書いておく。
+# 空かファイルが無ければ既定のアカウント（~/.claude）。
+#
+# 既定のアカウントでは変数を「消す」。~/.claude を入れてはいけない。
+# Claude は CLAUDE_CONFIG_DIR の文字列から Keychain の項目名を決めるので、
+# 入れた時点で別の項目を探しに行き、ログインしていない扱いになる。
+# 同じ理由で、保存した文字列は正規化せずそのまま渡す。
+
+ACTIVE_FILE="$DTW_HOME/active-config-dir"
+
+active_config_dir() {
+  [ -f "$ACTIVE_FILE" ] && head -n 1 "$ACTIVE_FILE" || true
+}
+
+# このスクリプトから起動する claude すべてに効かせる。GW が起動する worker にも引き継がれる。
+use_active_account() {
+  dir=$(active_config_dir)
+  if [ -n "$dir" ]; then
+    export CLAUDE_CONFIG_DIR="$dir"
+  else
+    unset CLAUDE_CONFIG_DIR
+  fi
+}
+
+account_label() {
+  [ -n "${1:-}" ] && printf '%s' "$1" || printf '既定 (~/.claude)'
 }
 
 # 一覧の取得。ヒアドキュメントでスクリプトを渡すと標準入力がそちらに奪われるので、

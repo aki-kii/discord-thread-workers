@@ -123,10 +123,42 @@ slides  トレース章の図を差し替えたい
 | 状態を見る | `/gw-control:status` |
 | GW を止める | `/gw-control:stop`（worker も止めるなら `--workers`） |
 | GW を入れ直す | `/gw-control:restart` |
+| GW と worker を別のアカウントへ移す | `/gw-control:switch`（移したいアカウントのセッションで実行） |
 | worker の中を見る | `claude attach <id>` |
 | 全部を今のバージョンで立て直す | `claude respawn --all` |
 
 GW を止めても worker は生き続ける。GW を立て直せばそのまま繋がる。
+
+## アカウントを切り替える
+
+レートリミットに当たったときに、GW と worker をまとめて別のアカウントへ移せる。
+スレッドはそのままで、次の発言から移した先のアカウントが返事をする。
+
+GW と worker のアカウントは `CLAUDE_CONFIG_DIR` だけで決まる。今のアカウントは
+`~/.claude/discord-thread-workers/active-config-dir` に 1 行で書いてあり、空なら既定の `~/.claude`。
+gw-control のスクリプトは起動のたびにこれを読み、自分が起動する `claude` にだけ渡す。
+端末で手で打つ `claude` には影響しない。
+
+既定のアカウントでは変数を消す。`~/.claude` を入れると、Claude が文字列から決める
+Keychain の項目名が変わり、ログインしていない扱いになるため。同じ理由で、ほかの
+アカウントもログインしたときと同じ文字列のまま保存して渡す。
+
+### 準備
+
+1. もう一方のアカウント用の設定ディレクトリを権限 700 で作り、共有したいものを
+   `~/.claude` へのシンボリックリンクにする。会話の記録（`projects`）は必ず共有する。
+   共有しないと切り替え後に同じ会話を再開できない。認証情報、`.claude.json`、
+   `sessions`、`daemon` はアカウントごとに分ける
+2. `CLAUDE_CONFIG_DIR=<そのディレクトリ> claude` でログインする
+3. 同じ `CLAUDE_CONFIG_DIR` で Remote Control のセッションを 1 つ立てておく
+
+### 切り替え
+
+移したいアカウントのセッション（たとえば上の Remote Control）で `/gw-control:switch` を
+実行する。切り替え先はそのセッションの `CLAUDE_CONFIG_DIR` で決まるので、名前は打たない。
+
+今のアカウントの GW と worker を止め、`active-config-dir` を書き換えて、GW を立て直す。
+worker は次の発言のときに、控えてあるセッション ID で同じ会話を再開する。
 
 ## 仕事が終わったら
 
